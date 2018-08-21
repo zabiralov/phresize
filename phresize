@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+
+# set -x;
+
+# Stupid script for convert/resize images
+
+# ------------------------------------------------------------------------------
+
+declare -r  prog='phresize';
+declare -r  version='1.0';
+declare -r  log='/dev/null';
+declare -r  dir='./0_RESIZED';
+declare -r  pref='RES';
+declare     target="${1}";
+declare     from="${2}";
+declare -ri qualitydef='100';
+declare -ar sizes=( '1280x800' '1680x1050' '1920x1200' '2560x1600');
+
+declare -r b=$(tput bold);
+declare -r n=$(tput sgr0);
+
+if [[ -x $(which convert) ]]; then :
+else
+    echo "convert binary not found, install ImageMagick or GraphicsMagick";
+    exit 1;
+fi
+
+if [[ $from ]]; then
+    if [[ $from =~ ^(png|tiff|tif)$ ]]; then :
+    else
+        echo "From field must be 'png', 'tiff', 'tif'";
+        exit 1;
+    fi
+else
+    from='png';
+fi
+
+function f_help {
+
+cat <<EOF
+    $prog $version
+
+    Usage:
+
+    ${b}$prog${n} [target] [from]
+
+         where ${b}target${n} is:
+
+             ${b}conv${n} - run standard covert/resize procedure (no files will be overwritten, default)
+             ${b}png${n} - create only PNG files (no files will be overwritten)
+             ${b}jpg${n} - create only JPG files (no files will be overwritten)
+             ${b}owr${n} - overwrite exists files and create JPG and PNG
+             ${b}owrjpg${n} - owerwrite JPG files
+             ${b}owrpng${n} - owerwrite PNG files
+             ${b}help${n} - print this help
+
+         and ${b}from${n} may be:
+
+             ${b}png${n} - source files are PNGs in current directory (default)
+             ${b}tif${n} or ${b}tiff${n} - source files are TIFFs in current directory 
+
+EOF
+}
+
+function f_prepare {
+
+    local imgc="$(ls -1 *.${from} | wc -l)";
+
+    if [[ $imgc -ge 1 ]]; then :
+    else
+        echo "$from files not found in current directory";
+        exit 1;
+    fi
+
+    if [[ -d $dir ]]; then :
+    else
+        mkdir $dir;
+    fi
+}
+
+function f_convert {
+
+    local to="${1}";
+    local owr="${2}";
+
+    for size in ${sizes[@]}; do
+
+        for i in IMG_*."$from"; do
+
+            local name="${i//.${from}/}";
+    
+            if [[ -d $dir/$to/${size} ]]; then : ; else mkdir -p ${dir}/${to}/${size}; fi
+            local new="${dir}/${to}/${size}/${pref}_${name}_${size}.${to}";
+            
+            if [[ ${owr} = 'owr' ]]; then
+                echo "${b}OWERWRITE:${n} ${i} as ${b}${to^^}${n} file ${new} with size ${b}${size}${n}";
+                convert -quality ${qualitydef} -resize ${size} ${i} ${new} &>> ${log} &
+                continue;
+            fi
+                    
+            if [[ -f ${new} ]]; then
+                echo "${b}WARNING:${n} file ${new} already exists!";
+                continue;
+            else
+                echo "${b}SAVE:${n} ${i} as ${b}${to^^}${n} file ${new} with size ${b}${size}${n}";
+                convert -quality ${qualitydef} -resize ${size} ${i} ${new} &>> ${log} &
+            fi                    
+        done
+    done
+}
+
+if [[ $target = 'conv' || -z $target ]]; then
+    f_prepare;
+    f_convert png;
+    f_convert jpg;
+elif [[ $target = 'png' ]]; then
+    f_prepare;
+    f_convert png;
+elif [[ $target = 'jpg' ]]; then
+    f_prepare;
+    f_convert jpg;
+elif [[ $target = 'owr' || $target = 'overwrite' ]]; then
+    f_prepare;
+    f_convert png owr;
+    f_convert jpg owr;
+elif [[ $target = 'owrpng' ]]; then
+    f_prepare;
+    f_convert png owr;
+elif [[ $target = 'owrjpg' ]]; then
+    f_prepare;
+    f_convert jpg owr;
+elif [[ $target = 'help' || $target = '--help' || $target = '-h' ]]; then
+    f_help;
+fi
