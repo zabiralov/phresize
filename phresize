@@ -7,7 +7,7 @@
 # ------------------------------------------------------------------------------
 
 declare -r  prog='phresize';
-declare -r  version='1.0.1';
+declare -r  version='1.1.0';
 declare -r  log='/dev/null';
 declare -r  dir='./0_RESIZED';
 declare -r  pref='RES';
