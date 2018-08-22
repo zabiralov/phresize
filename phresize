@@ -7,28 +7,28 @@
 # ------------------------------------------------------------------------------
 
 declare -r  prog='phresize';
-declare -r  version='1.0';
+declare -r  version='1.0.1';
 declare -r  log='/dev/null';
 declare -r  dir='./0_RESIZED';
 declare -r  pref='RES';
 declare     target="${1}";
 declare     from="${2}";
 declare -ri qualitydef='100';
-declare -ar sizes=( '1280x800' '1680x1050' '1920x1200' '2560x1600');
+declare -ar sizes=( '1280x800' '1680x1050' '1920x1200' '2560x1600' );
 
 declare -r b=$(tput bold);
 declare -r n=$(tput sgr0);
 
 if [[ -x $(which convert) ]]; then :
 else
-    echo "convert binary not found, install ImageMagick or GraphicsMagick";
+    echo "${b}ERROR:${n} convert binary not found, install ImageMagick or GraphicsMagick";
     exit 1;
 fi
 
 if [[ $from ]]; then
     if [[ $from =~ ^(png|tiff|tif)$ ]]; then :
     else
-        echo "From field must be 'png', 'tiff', 'tif'";
+        echo "${b}ERROR:${n} 'from' field must be 'png', 'tiff' or 'tif'";
         exit 1;
     fi
 else
@@ -64,17 +64,17 @@ EOF
 
 function f_prepare {
 
-    local imgc="$(ls -1 *.${from} | wc -l)";
+    local imgc="$(ls -1 *.${from} 2> ${log} | wc -l)";
 
     if [[ $imgc -ge 1 ]]; then :
     else
-        echo "$from files not found in current directory";
+        echo "${b}ERROR:${n} ${from} files not found in current directory";
         exit 1;
     fi
 
     if [[ -d $dir ]]; then :
     else
-        mkdir $dir;
+        mkdir ${dir};
     fi
 }
 
@@ -85,7 +85,7 @@ function f_convert {
 
     for size in ${sizes[@]}; do
 
-        for i in IMG_*."$from"; do
+        for i in IMG_*."${from}"; do
 
             local name="${i//.${from}/}";
     
@@ -109,26 +109,33 @@ function f_convert {
     done
 }
 
-if [[ $target = 'conv' || -z $target ]]; then
+if [[ $target = 'help' || $target = '--help' || $target = '-h' ]]; then
+    f_help;
+    exit 0;
+elif [[ $target = 'conv' || -z $target ]]; then
     f_prepare;
     f_convert png;
     f_convert jpg;
+    exit 0;
 elif [[ $target = 'png' ]]; then
     f_prepare;
     f_convert png;
+    exit 0;
 elif [[ $target = 'jpg' ]]; then
     f_prepare;
     f_convert jpg;
+    exit 0;
 elif [[ $target = 'owr' || $target = 'overwrite' ]]; then
     f_prepare;
     f_convert png owr;
     f_convert jpg owr;
+    exit 0;
 elif [[ $target = 'owrpng' ]]; then
     f_prepare;
     f_convert png owr;
+    exit 0;
 elif [[ $target = 'owrjpg' ]]; then
     f_prepare;
     f_convert jpg owr;
-elif [[ $target = 'help' || $target = '--help' || $target = '-h' ]]; then
-    f_help;
+    exit 0;
 fi
