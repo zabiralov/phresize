@@ -16,6 +16,9 @@ declare     from="${2}";
 declare -ri qualitydef='100';
 declare -ar sizes=( '1280x800' '1680x1050' '1920x1200' '2560x1600' );
 
+declare -ri multiplier='2';
+declare -ri verbose='0';
+
 declare -r b=$(tput bold);
 declare -r n=$(tput sgr0);
 
@@ -96,16 +99,25 @@ function f_generate_jobs {
             local new="${dir}/${to}/${size}/${pref}_${name}_${size}.${to}";
             
             if [[ ${owr} = 'owr' ]]; then
-                echo "${b}OWERWRITE:${n} ${i} as ${b}${to^^}${n} file ${new} with size ${b}${size}${n}";
+
+                if [[ $verbose -eq 1 ]]; then
+                    echo "${b}OWERWRITE:${n} ${i} as ${b}${to^^}${n} file ${new} with size ${b}${size}${n}";
+                fi
+
                 local job="convert -quality ${qualitydef} -resize ${size} ${i} ${new}";
                 continue;
             fi
                     
             if [[ -f ${new} ]]; then
-                echo "${b}WARNING:${n} file ${new} already exists!";
+                if [[ $verbose -eq 1 ]]; then
+                    echo "${b}WARNING:${n} file ${new} already exists!";
+                fi
+
                 continue;
             else
-                echo "${b}SAVE:${n} ${i} as ${b}${to^^}${n} file ${new} with size ${b}${size}${n}";
+                if [[ $verbose -eq 1 ]]; then
+                    echo "${b}SAVE:${n} ${i} as ${b}${to^^}${n} file ${new} with size ${b}${size}${n}";
+                fi
                 local job="convert -quality ${qualitydef} -resize ${size} ${i} ${new}"
             fi
 
@@ -121,10 +133,11 @@ function f_generate_jobs {
 function f_check_jobs {
 
     local -i current_jobs=$(jobs | egrep -o '[0-9]+' | wc -l);
-    local -ri cpus=$(nproc);
+    local -ri nproc=$(nproc);
+    local -i max_jobs=$(( $nproc * $multiplier ));
     local -i return='1';
     
-    if [[ $current_jobs -lt $cpus ]]; then
+    if [[ $current_jobs -lt $max_jobs ]]; then
         return=0;
     fi
 
@@ -184,7 +197,7 @@ function f_execute_jobs {
         else
 
             # If no avail cpus - wait and start iteration again
-            sleep 0.2;
+            sleep 0.1;
             continue;
         fi
 
