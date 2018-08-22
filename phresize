@@ -19,6 +19,9 @@ declare -ar sizes=( '1280x800' '1680x1050' '1920x1200' '2560x1600' );
 declare -r b=$(tput bold);
 declare -r n=$(tput sgr0);
 
+declare -a runlist=();
+
+
 if [[ -x $(which convert) ]]; then :
 else
     echo "${b}ERROR:${n} convert binary not found, install ImageMagick or GraphicsMagick";
@@ -78,12 +81,12 @@ function f_prepare {
     fi
 }
 
-function f_convert {
+function f_generate_jobs {
 
     local to="${1}";
     local owr="${2}";
 
-    for size in ${sizes[@]}; do
+    for size in "${sizes[@]}"; do
 
         for i in IMG_*."${from}"; do
 
@@ -94,7 +97,7 @@ function f_convert {
             
             if [[ ${owr} = 'owr' ]]; then
                 echo "${b}OWERWRITE:${n} ${i} as ${b}${to^^}${n} file ${new} with size ${b}${size}${n}";
-                convert -quality ${qualitydef} -resize ${size} ${i} ${new} &>> ${log} &
+                local job="convert -quality ${qualitydef} -resize ${size} ${i} ${new}";
                 continue;
             fi
                     
@@ -103,39 +106,125 @@ function f_convert {
                 continue;
             else
                 echo "${b}SAVE:${n} ${i} as ${b}${to^^}${n} file ${new} with size ${b}${size}${n}";
-                convert -quality ${qualitydef} -resize ${size} ${i} ${new} &>> ${log} &
-            fi                    
+                local job="convert -quality ${qualitydef} -resize ${size} ${i} ${new}"
+            fi
+
+            # Push job to runlist:
+            runlist+=("${job}");
         done
     done
 }
+
+# If f_check_jobs return 0 - f_execute_jobs run new job
+# if return 1 - f_execute_jobs will not run new job
+#
+function f_check_jobs {
+
+    local -i current_jobs=$(jobs | egrep -o '[0-9]+' | wc -l);
+    local -ri cpus=$(nproc);
+    local -i return='1';
+    
+    if [[ $current_jobs -lt $cpus ]]; then
+        return=0;
+    fi
+
+    echo $return;
+}
+
+function f_execute_jobs {
+
+    local -i complete_jobs_count='0';
+    local -i failed_jobs_count='0';
+    local -i total_jobs_count="${#runlist[@]}";
+    local -i running_job_number='1';
+
+    echo "--------------------------------------------------------------------------------";
+
+    while true; do
+
+        # Initialize counters
+        local -i runflag=$(f_check_jobs);
+        local -i runlist_total_elements="${#runlist[@]}";
+
+        # Number of last element in runlist
+        local -i runlist_last_element_number="$((runlist_total_elements-1))";
+        
+        if [[ $runflag -eq 0 ]]; then
+
+
+            if [[ $runlist_total_elements -gt 0 ]]; then
+
+                # Run job if cpus is availiable and runlist is not empty
+                echo -ne "\r${b}INFO:${n} run ${running_job_number} of ${total_jobs_count}";
+                
+                eval "${runlist[$runlist_last_element_number]} &> ${log}" &
+
+                # Check if job was completed successfully 
+                if [[ $? -eq 0 ]]; then
+                    let complete_jobs_count++;
+                else
+                    let failed_jobs_count++;
+                fi
+
+                unset runlist["${runlist_last_element_number}"];
+                let running_job_number++;
+                
+            else
+                # If runlist is empty - show stat and gracefull exit
+
+                echo -e "\n${b}INFO:${n} all complete!";
+
+                echo "${b}STAT:${n} total jobs: ${b}$total_jobs_count${n}";
+                echo "${b}STAT:${n} complete jobs: ${b}$complete_jobs_count${n}";
+                echo "${b}STAT:${n} failed jobs: ${b}$failed_jobs_count${n}";
+
+                exit 0;
+            fi
+            
+        else
+
+            # If no avail cpus - wait and start iteration again
+            sleep 0.2;
+            continue;
+        fi
+
+    done
+    
+}
+
 
 if [[ $target = 'help' || $target = '--help' || $target = '-h' ]]; then
     f_help;
     exit 0;
 elif [[ $target = 'conv' || -z $target ]]; then
     f_prepare;
-    f_convert png;
-    f_convert jpg;
+    f_generate_jobs png;
+    f_generate_jobs jpg;
+    f_execute_jobs;
     exit 0;
 elif [[ $target = 'png' ]]; then
     f_prepare;
-    f_convert png;
+    f_generate_jobs png;
     exit 0;
 elif [[ $target = 'jpg' ]]; then
     f_prepare;
-    f_convert jpg;
+    f_generate_jobs jpg;
+    f_execute_jobs;
     exit 0;
 elif [[ $target = 'owr' || $target = 'overwrite' ]]; then
     f_prepare;
-    f_convert png owr;
-    f_convert jpg owr;
+    f_generate_jobs png owr;
+    f_generate_jobs jpg owr;
+    f_execute_jobs;
     exit 0;
 elif [[ $target = 'owrpng' ]]; then
     f_prepare;
-    f_convert png owr;
+    f_generate_jobs png owr;
+    f_execute_jobs;
     exit 0;
 elif [[ $target = 'owrjpg' ]]; then
     f_prepare;
-    f_convert jpg owr;
+    f_generate_jobs jpg owr;
+    f_execute_jobs;
     exit 0;
 fi
