@@ -7,17 +7,17 @@
 # ------------------------------------------------------------------------------
 
 declare -r  prog='phresize';
-declare -r  version='1.1.0';
+declare -r  version='1.2.0';
 declare -r  log='/dev/null';
 declare -r  dir='./0_RESIZED';
 declare -r  pref='RES';
-declare     target="${1}";
-declare     from="${2}";
 declare -ri qualitydef='100';
 declare -ar sizes=( '1280x800' '1680x1050' '1920x1200' '2560x1600' );
 
 declare -ri multiplier='2';
-declare -ri verbose='0';
+declare -i  verbose='0';
+
+declare     source='png';
 
 declare -r b=$(tput bold);
 declare -r n=$(tput sgr0);
@@ -31,50 +31,81 @@ else
     exit 1;
 fi
 
-if [[ $from ]]; then
-    if [[ $from =~ ^(png|tiff|tif)$ ]]; then :
+function f_preset_source {
+
+    local preset_source=${1};
+
+    if [[ $preset_source ]]; then
+        if [[ $preset_source =~ ^(png|tiff|tif)$ ]]; then
+            source=${preset_source};
+        else
+            echo "${b}ERROR:${n} 'source' field must be 'png', 'tiff' or 'tif'";
+            exit 1;
+        fi
+    fi
+
+}
+
+function f_preset_max_jobs {
+
+    preset_jobs="${1}";
+
+    if [[ $preset_jobs ]]; then
+        if [[ $preset_jobs -ge 1 ]]; then :
+        else
+            echo "${b}ERROR:${n} value for ${b}-c${n} parameter must be >= 1";
+            exit 1;
+        fi
     else
-        echo "${b}ERROR:${n} 'from' field must be 'png', 'tiff' or 'tif'";
+        echo "${b}ERROR:${n} value for ${b}-c${n} parameter must be >= 1";
         exit 1;
     fi
-else
-    from='png';
-fi
+}
+
+
+function f_version {
+            echo "$prog $version";
+}
 
 function f_help {
 
 cat <<EOF
-    $prog $version
 
     Usage:
 
-    ${b}$prog${n} [target] [from]
+    ${b}$prog${n} [params] <mode> [flags]
 
-         where ${b}target${n} is:
+         where ${b}mode${n} is:
 
-             ${b}conv${n} - run standard covert/resize procedure (no files will be overwritten, default)
-             ${b}png${n} - create only PNG files (no files will be overwritten)
-             ${b}jpg${n} - create only JPG files (no files will be overwritten)
-             ${b}owr${n} - overwrite exists files and create JPG and PNG
-             ${b}owrjpg${n} - owerwrite JPG files
-             ${b}owrpng${n} - owerwrite PNG files
-             ${b}help${n} - print this help
+             ${b}-a${n} - run standard covert/resize procedure (no files will be overwritten, default)
+             ${b}-p${n} - create only PNG files (no files will be overwritten)
+             ${b}-j${n} - create only JPG files (no files will be overwritten)
+             ${b}-A${n} - overwrite exists files and create JPG and PNG
+             ${b}-P${n} - owerwrite PNG files
+             ${b}-J${n} - owerwrite JPG files
 
-         and ${b}from${n} may be:
+             ${b}-h${n} - print help and exit
+             ${b}-V${n} - print version and exit
 
-             ${b}png${n} - source files are PNGs in current directory (default)
-             ${b}tif${n} or ${b}tiff${n} - source files are TIFFs in current directory 
+         and ${b}params${n} may be:
+
+             ${b}-s png${n} - source files are PNGs in current directory (default)
+             ${b}-s tif${n} or ${b}tiff${n} - source files are TIFFs in current directory
+
+         and ${b}flags${n} may be:
+
+             ${b}-v${n} - enable verbose mode
 
 EOF
 }
 
 function f_prepare {
 
-    local imgc="$(ls -1 *.${from} 2> ${log} | wc -l)";
+    local imgc="$(ls -1 *.${source} 2> ${log} | wc -l)";
 
     if [[ $imgc -ge 1 ]]; then :
     else
-        echo "${b}ERROR:${n} ${from} files not found in current directory";
+        echo "${b}ERROR:${n} ${source} files not found in current directory";
         exit 1;
     fi
 
@@ -91,13 +122,13 @@ function f_generate_jobs {
 
     for size in "${sizes[@]}"; do
 
-        for i in IMG_*."${from}"; do
+        for i in IMG_*."${source}"; do
 
-            local name="${i//.${from}/}";
-    
+            local name="${i//.${source}/}";
+
             if [[ -d $dir/$to/${size} ]]; then : ; else mkdir -p ${dir}/${to}/${size}; fi
             local new="${dir}/${to}/${size}/${pref}_${name}_${size}.${to}";
-            
+
             if [[ ${owr} = 'owr' ]]; then
 
                 if [[ $verbose -eq 1 ]]; then
@@ -107,7 +138,7 @@ function f_generate_jobs {
                 local job="convert -quality ${qualitydef} -resize ${size} ${i} ${new}";
                 continue;
             fi
-                    
+
             if [[ -f ${new} ]]; then
                 if [[ $verbose -eq 1 ]]; then
                     echo "${b}WARNING:${n} file ${new} already exists!";
@@ -132,12 +163,19 @@ function f_generate_jobs {
 #
 function f_check_jobs {
 
-    local -i current_jobs=$(jobs | egrep -o '[0-9]+' | wc -l);
+    local -i  return='1';
+    local -i  max_jobs='1';
     local -ri nproc=$(nproc);
-    local -i max_jobs=$(( $nproc * $multiplier ));
-    local -i return='1';
-    
-    if [[ $current_jobs -lt $max_jobs ]]; then
+
+    if [[ $preset_jobs ]]; then
+        max_jobs=${preset_jobs};
+    else
+        max_jobs=$(( $nproc * $multiplier ));
+    fi
+
+    local -i current_jobs=$(jobs | egrep -o '[0-9]+' | wc -l);
+
+    if [[ $current_jobs -le $max_jobs ]]; then
         return=0;
     fi
 
@@ -161,7 +199,7 @@ function f_execute_jobs {
 
         # Number of last element in runlist
         local -i runlist_last_element_number="$((runlist_total_elements-1))";
-        
+
         if [[ $runflag -eq 0 ]]; then
 
 
@@ -169,10 +207,10 @@ function f_execute_jobs {
 
                 # Run job if cpus is availiable and runlist is not empty
                 echo -ne "\r${b}INFO:${n} run ${running_job_number} of ${total_jobs_count}";
-                
+
                 eval "${runlist[$runlist_last_element_number]} &> ${log}" &
 
-                # Check if job was completed successfully 
+                # Check if job was completed successfully
                 if [[ $? -eq 0 ]]; then
                     let complete_jobs_count++;
                 else
@@ -181,7 +219,7 @@ function f_execute_jobs {
 
                 unset runlist["${runlist_last_element_number}"];
                 let running_job_number++;
-                
+
             else
                 # If runlist is empty - show stat and gracefull exit
 
@@ -193,7 +231,7 @@ function f_execute_jobs {
 
                 exit 0;
             fi
-            
+
         else
 
             # If no avail cpus - wait and start iteration again
@@ -202,42 +240,74 @@ function f_execute_jobs {
         fi
 
     done
-    
+
 }
 
 
-if [[ $target = 'help' || $target = '--help' || $target = '-h' ]]; then
-    f_help;
-    exit 0;
-elif [[ $target = 'conv' || -z $target ]]; then
-    f_prepare;
-    f_generate_jobs png;
-    f_generate_jobs jpg;
-    f_execute_jobs;
-    exit 0;
-elif [[ $target = 'png' ]]; then
-    f_prepare;
-    f_generate_jobs png;
-    exit 0;
-elif [[ $target = 'jpg' ]]; then
-    f_prepare;
-    f_generate_jobs jpg;
-    f_execute_jobs;
-    exit 0;
-elif [[ $target = 'owr' || $target = 'overwrite' ]]; then
-    f_prepare;
-    f_generate_jobs png owr;
-    f_generate_jobs jpg owr;
-    f_execute_jobs;
-    exit 0;
-elif [[ $target = 'owrpng' ]]; then
-    f_prepare;
-    f_generate_jobs png owr;
-    f_execute_jobs;
-    exit 0;
-elif [[ $target = 'owrjpg' ]]; then
-    f_prepare;
-    f_generate_jobs jpg owr;
-    f_execute_jobs;
-    exit 0;
-fi
+while getopts ":vc:s:VhapjAPJ" opt; do
+    case ${opt} in
+
+        ('v')
+            verbose=1 ;;
+
+        ('c')
+            f_preset_max_jobs ${OPTARG} ;;
+
+        ('s')
+            f_preset_source ${OPTARG} ;;
+
+        ('V')
+            f_version;
+            exit 0 ;;
+
+        ('h')
+            f_help;
+            exit 0 ;;
+
+        ('a')
+            f_prepare;
+            f_generate_jobs png;
+            f_generate_jobs jpg;
+            f_execute_jobs;
+            exit 0 ;;
+
+        ('p')
+            f_prepare;
+            f_generate_jobs png;
+            f_execute_jobs;
+            exit 0 ;;
+
+        ('j')
+            f_prepare;
+            f_generate_jobs jpg;
+            f_execute_jobs;
+            exit 0 ;;
+
+        ('A')
+            f_prepare;
+            f_generate_jobs png owr;
+            f_generate_jobs jpg owr;
+            f_execute_jobs;
+            exit 0 ;;
+
+        ('P')
+            f_prepare;
+            f_generate_jobs png owr;
+            f_execute_jobs;
+            exit 0 ;;
+
+        ('J')
+            f_prepare;
+            f_generate_jobs jpg owr;
+            f_execute_jobs;
+            exit 0 ;;
+
+        (\?)
+            echo "${b}ERROR:${n} invalid option: -$OPTARG" >&2
+            f_help ;
+            exit 0 ;;
+
+    esac
+done
+
+shift $((OPTIND-1))
